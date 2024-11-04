@@ -1,20 +1,27 @@
-// 读取原始响应内容
-let obj = JSON.parse($response.body);
+// 仅当 URL 匹配特定请求时执行
+if ($request.url.includes("/v6/app_config")) {
+  // 获取响应内容
+  let body = $response.body;
+  
+  // 解析 JSON
+  let obj = JSON.parse(body);
 
-// 放行 weekday_video_list 请求
-if ($request.url.includes("weekday_video_list")) {
-    // 直接返回原始响应
-    $done({ body: $response.body });
+  // 删除不需要的字段
+  if (obj.data) {
+    if (obj.data.dm_config) {
+      delete obj.data.dm_config.top_content; // 删除“文明发送弹幕”内容
+    }
+    if (obj.data.comment_config) {
+      delete obj.data.comment_config; // 删除“官方提醒”内容
+    }
+  }
+
+  // 转回 JSON 字符串
+  body = JSON.stringify(obj);
+
+  // 返回修改后的响应
+  $done({ body });
+} else {
+  // 直接放行其他请求
+  $done({});
 }
-
-// 如果需要对其他请求进行修改，可以在这里添加逻辑
-// 例如，保留底部导航栏和历史记录配置
-obj.data = {
-    find_config: {
-        bottom_nav_name: obj.data.find_config.bottom_nav_name // 保留底部导航栏名称
-    },
-    history_config: obj.data.history_config // 保留历史记录配置
-};
-
-// 返回修改后的响应内容
-$done({ body: JSON.stringify(obj) });
