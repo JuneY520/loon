@@ -20,6 +20,9 @@ if ($request.url.includes("/v6/app_config")) {
     if (obj.data.modules_config && obj.data.modules_config.find) {
       delete obj.data.modules_config.find; // 删除底部导航栏中的“留言”按钮
     }
+    if (obj.data.img_config && obj.data.img_config.splash_img) {
+      delete obj.data.img_config.splash_img; // 删除开屏广告图片
+    }
   }
 
   // 转回 JSON 字符串
