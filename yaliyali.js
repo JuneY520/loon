@@ -14,6 +14,9 @@ if ($request.url.includes("/v6/app_config")) {
     if (obj.data.comment_config) {
       delete obj.data.comment_config; // 删除“官方提醒”内容
     }
+    if (obj.data.find_config) {
+      delete obj.data.find_config; // 删除“留言”相关配置
+    }
   }
 
   // 转回 JSON 字符串
