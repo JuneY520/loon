@@ -17,6 +17,9 @@ if ($request.url.includes("/v6/app_config")) {
     if (obj.data.find_config) {
       delete obj.data.find_config; // 删除“留言”配置
     }
+    if (obj.data.modules_config && obj.data.modules_config.find) {
+      delete obj.data.modules_config.find; // 删除底部导航栏中的“留言”按钮
+    }
   }
 
   // 转回 JSON 字符串
