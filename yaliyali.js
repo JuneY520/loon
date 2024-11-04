@@ -1,13 +1,10 @@
 // 读取原始响应内容
 let obj = JSON.parse($response.body);
 
-// 保留 "msg"、"code" 以及 "data" 中的 "app_config" 部分（即整个 data）
-obj = {
-  msg: obj.msg,
-  code: obj.code,
-  data: {
-    find_config: obj.data.find_config,
-    history_config: obj.data.history_config
+// 只保留导航栏显示配置
+obj.data = {
+  find_config: {
+    bottom_nav_name: obj.data.find_config.bottom_nav_name // 保留底部导航栏名称
   }
 };
 
