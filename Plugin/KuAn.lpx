@@ -24,5 +24,5 @@ https:\/\/api\.coolapk\.com\/v6\/search\?.*type=hotSearch url reject-200
 ^https:\/\/api\.coolapk\.com\/v6\/account\/loadConfig\?key=my_page_card_config url response-body-json-jq ".data |= map(select(.entityType != \"textLink\" and (.entityId != 1001 and .entityId != 1003 and .entityId != 1004 and .entityId != 1005)) | if .entities then .entities |= map(select(.entityType != \"textLink\")) else . end)"
 
 
-
+[MITM]
 hostname= api.coolapk.com
