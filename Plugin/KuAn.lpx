@@ -1,8 +1,3 @@
-!name=酷安全面净化
-#!desc=local
-#!author=怎么肥事、walala
-!icon=https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1004.png
-#!update=2025-11-01
 
 [Rewrite]
 ^https:\/\/api\.coolapk\.com\/v6\/user\/profile response-body-json-jq '.data.level = 20 | .data.fans = 99999 | .data.experience = 94575543 | .data.next_level_experience = 200000000'
