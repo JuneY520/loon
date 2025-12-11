@@ -1,9 +1,3 @@
-[Plugin]
-name = 酷安全面净化
-author = 怎么肥事、walala
-version = 2025-11-01
-desc = Coolapk 净化：去广告、提升等级、屏蔽热搜等
-rules = rewrite
 
 [Rewrite]
 # 修改用户资料等级、粉丝、经验
