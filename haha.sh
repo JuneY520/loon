@@ -47,12 +47,12 @@ EOF
 write_service() {
   cat > $SERVICE_FILE <<EOF
 [Unit]
-Description=Xray Trojan/VLESS Service
+Description=Xray Trojan/VLESS WS+TLS Service
 After=network.target
 
 [Service]
 ExecStart=$XRAY_BIN -config $CONF_FILE
-Restart=always
+Restart=on-failure
 RestartSec=5s
 
 [Install]
@@ -113,55 +113,8 @@ install_all(){
   write_node
 
   clear
-  green "安装完成"
+  green "安装完成！Loon 节点如下："
   cat $NODE_FILE
-  read -p "按回车返回菜单"
-}
-
-enable_bbr(){
-  modprobe tcp_bbr || true
-  cat <<EOF >/etc/sysctl.d/99-bbr.conf
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-EOF
-  sysctl --system >/dev/null 2>&1
-  green "BBR 已启用"
-  read -p "按回车返回菜单"
-}
-
-change_host(){
-  while true; do
-    read -p "请输入新的服务器真实域名/IP: " DIRECT_HOST
-    [ -n "$DIRECT_HOST" ] && break
-    red "主机/IP 不能为空"
-  done
-  while true; do
-    read -p "请输入新的伪装域名 (WS Host & SNI): " FAKE_HOST
-    [ -n "$FAKE_HOST" ] && break
-    red "伪装域名不能为空"
-  done
-  write_node
-  systemctl restart xray.service
-  green "主机/伪装域名已更新"
-  read -p "按回车返回菜单"
-}
-
-change_port(){
-  read -p "请输入新的端口: " NEW_PORT
-  PORT="$NEW_PORT"
-  write_config
-  write_service
-  write_node
-  green "端口已更新"
-  read -p "按回车返回菜单"
-}
-
-show_node(){
-  if [ -f "$NODE_FILE" ]; then
-    nl -w2 -s'. ' $NODE_FILE
-  else
-    red "未找到节点文件"
-  fi
   read -p "按回车返回菜单"
 }
 
@@ -186,35 +139,36 @@ delete_node(){
   read -p "按回车返回菜单"
 }
 
-uninstall(){
-  systemctl stop xray.service || true
-  systemctl disable xray.service || true
-  rm -rf $CONF_DIR $WORK_DIR $SERVICE_FILE $XRAY_BIN
-  green "卸载完成"
-  read -p "按回车退出"
+show_node(){
+  if [ -f "$NODE_FILE" ]; then
+    nl -w2 -s'. ' $NODE_FILE
+  else
+    red "未找到节点文件"
+  fi
+  read -p "按回车返回菜单"
 }
 
 menu(){
   clear
   echo "1) 安装节点"
-  echo "2) 开启 BBR"
-  echo "3) 修改 主机/伪装域名"
-  echo "4) 修改 端口"
-  echo "5) 查看 Loon 节点"
-  echo "6) 删除 单条 节点"
+  echo "2) 查看 Loon 节点"
+  echo "3) 删除 单条 节点"
+  echo "4) 开启 BBR"
+  echo "5) 修改 主机/伪装域名"
+  echo "6) 修改 端口"
   echo "7) 卸载 服务"
   echo "0) 退出"
   read -p "请选择: " c
   case $c in
     1) install_all ;;
-    2) enable_bbr ;;
-    3) change_host ;;
-    4) change_port ;;
-    5) show_node ;;
-    6) delete_node ;;
+    2) show_node ;;
+    3) delete_node ;;
+    4) enable_bbr ;;
+    5) change_host ;;
+    6) change_port ;;
     7) uninstall ;;
     0) exit ;;
-    *) red "输入错误" ;;
+    *) ;;
   esac
 }
 
