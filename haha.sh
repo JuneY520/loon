@@ -1,7 +1,26 @@
+---
+
+## ✅ 更新后的脚本逻辑要求（本次实现）
+
+1. 安装服务：Trojan + VLESS  
+2. WebSocket + TLS  
+3. 输出 **CF 优选 IP 或域名**  
+4. 输出 **Loon 标准格式节点**
+5. 可修改域名 / 端口 / BBR
+6. **删除 SS 协议**
+7. 脚本自动打印节点，不再需要查询文件
+
+---
+
+## 📌 下面是为你改好的【完整脚本源码】
+
+请全部复制以下内容，到你的仓库覆盖原 `haha.sh`：
+
+```bash
 #!/bin/bash
-# =========================================================
-# haha.sh - Trojan + VLESS + WS + TLS + CF 优选 IP + Loon 支持
-# =========================================================
+# ===============================================================
+# haha.sh - Trojan/VLESS + WS + TLS + CF 优选 IP + Loon 格式
+# ===============================================================
 
 set -e
 
@@ -12,13 +31,14 @@ NODE_FILE="$WORK_DIR/loon.txt"
 SERVICE_FILE="/etc/systemd/system/xray.service"
 
 XRAY_BIN="/usr/local/bin/xray"
-CF_IP_LIST=(
+CF_IP_CANDIDATES=(
   "104.16.0.0"
   "104.17.0.0"
   "104.18.0.0"
   "104.19.0.0"
   "104.20.0.0"
 )
+
 green() { echo -e "\033[32m$1\033[0m"; }
 red()   { echo -e "\033[31m$1\033[0m"; }
 
@@ -26,7 +46,7 @@ mkdir -p $WORK_DIR $CONF_DIR
 
 install_xray() {
   if [ ! -f "$XRAY_BIN" ]; then
-    green "下载并安装 Xray core..."
+    green "下载并安装 Xray..."
     wget -qO /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
     mkdir -p /tmp/xray
     unzip -oq /tmp/xray.zip -d /tmp/xray
@@ -34,16 +54,19 @@ install_xray() {
   fi
 }
 
-pick_cf_ip(){
-  green "正在测试 CF 优选 IP..."
+choose_cf_ip(){
+  green "测试 CF 优选 IP..."
   BEST_IP=""
-  BEST_LAT=9999
-  for ip in "${CF_IP_LIST[@]}"; do
-    t=$(ping -c2 -W1 $ip 2>/dev/null | grep avg | awk -F'/' '{print $5}')
-    [[ -n "$t" && $(echo "$t < $BEST_LAT" | bc -l) -eq 1 ]] && BEST_LAT=$t && BEST_IP=$ip
+  BEST_LAT=999999
+  for ip in "${CF_IP_CANDIDATES[@]}"; do
+    ping_time=$(ping -c 2 -W 1 $ip 2>/dev/null | grep avg | awk -F'/' '{print $5}')
+    if [[ -n "$ping_time" ]] && (( $(echo "$ping_time < $BEST_LAT" | bc -l) )); then
+      BEST_LAT=$ping_time
+      BEST_IP=$ip
+    fi
   done
   [ -z "$BEST_IP" ] && BEST_IP="$CF_DOMAIN"
-  green "选出的优选 IP: $BEST_IP (延迟: $BEST_LAT ms)"
+  green "优选 IP: $BEST_IP (延迟: $BEST_LAT ms)"
 }
 
 write_config() {
@@ -52,30 +75,40 @@ write_config() {
 {
   "inbounds": [
     {
-      "port": ${PORT},
+      "port": $PORT,
       "protocol": "trojan",
       "settings": {
-        "clients":[{ "password":"${TROJAN_PASS}" }]
+        "clients": [{
+          "password": "$TROJAN_PASS"
+        }]
       },
-      "streamSettings":{
-        "network":"ws",
-        "wsSettings":{"path":"${WS_PATH}"}
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "$WS_PATH"
+        }
       }
     },
     {
-      "port": ${PORT},
+      "port": $PORT,
       "protocol": "vless",
       "settings": {
-        "clients":[{ "id":"${VLESS_UUID}" }],
-        "decryption":"none"
+        "clients": [{
+          "id": "$VLESS_UUID"
+        }],
+        "decryption": "none"
       },
-      "streamSettings":{
-        "network":"ws",
-        "wsSettings":{"path":"${WS_PATH}"}
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "$WS_PATH"
+        }
       }
     }
   ],
-  "outbounds":[{"protocol":"freedom"}]
+  "outbounds": [
+    { "protocol": "freedom" }
+  ]
 }
 EOF
 }
@@ -102,19 +135,19 @@ EOF
 
 write_node() {
   echo > $NODE_FILE
-  echo "Trojan_CF_WS = trojan,$BEST_IP,$PORT,\"$TROJAN_PASS\",transport=ws,path=$WS_PATH,host=$CF_DOMAIN,tls-name=$CF_DOMAIN,alpn=http1.1,skip-cert-verify=true,udp=false" >> $NODE_FILE
-  echo "VLESS_CF_WS = vless://$VLESS_UUID@$BEST_IP:$PORT?type=ws&host=$CF_DOMAIN&path=$WS_PATH&security=tls&encryption=none#VLESS_CF_WS" >> $NODE_FILE
+  echo "Trojan_CF_WS = trojan,$BEST_IP,$PORT,\"$TROJAN_PASS\",transport=ws,path=$WS_PATH,host=$CF_DOMAIN,alpn=http1.1,skip-cert-verify=true,tls-name=$CF_DOMAIN,udp=false" >> $NODE_FILE
+  echo "VLESS_CF_WS = VLESS,$BEST_IP,$PORT,\"$VLESS_UUID\",transport=ws,path=$WS_PATH,host=$CF_DOMAIN,over-tls=true,tls-name=$CF_DOMAIN,skip-cert-verify=true" >> $NODE_FILE
 }
 
 install_all(){
-  read -p "请输入你的 CF 域名: " CF_DOMAIN
-  read -p "请输入端口 (默认 443): " PORT
+  read -p "请输入 CF 域名: " CF_DOMAIN
+  read -p "请输入端口 (默认443): " PORT
   [ -z "$PORT" ] && PORT=443
 
   WS_PATH="/$(cat /proc/sys/kernel/random/uuid | cut -d- -f1)"
 
   install_xray
-  pick_cf_ip
+  choose_cf_ip
 
   TROJAN_PASS=$(openssl rand -base64 16)
   VLESS_UUID=$(cat /proc/sys/kernel/random/uuid)
@@ -131,7 +164,7 @@ install_all(){
 }
 
 enable_bbr() {
-  green "开启 BBR..."
+  green "开启 BBR 加速..."
   modprobe tcp_bbr || true
   cat <<EOF >/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
@@ -145,11 +178,11 @@ EOF
 change_domain() {
   read -p "请输入新的 CF 域名: " NEW_DOMAIN
   CF_DOMAIN="$NEW_DOMAIN"
-  pick_cf_ip
+  choose_cf_ip
   write_node
   systemctl restart xray.service
 
-  green "域名已修改"
+  green "域名已更新"
   cat $NODE_FILE
   read -p "回车返回菜单"
 }
@@ -161,7 +194,7 @@ change_port() {
   write_service
   write_node
 
-  green "端口已修改"
+  green "端口已更新"
   cat $NODE_FILE
   read -p "回车返回菜单"
 }
@@ -172,8 +205,8 @@ show_node(){
 }
 
 uninstall(){
-  systemctl stop xray.service||true
-  systemctl disable xray.service||true
+  systemctl stop xray.service || true
+  systemctl disable xray.service || true
   rm -rf $CONF_DIR $WORK_DIR $SERVICE_FILE $XRAY_BIN
   green "已卸载"
   read -p "回车返回菜单"
@@ -182,14 +215,14 @@ uninstall(){
 menu(){
   clear
   echo "=============================="
-  echo " haha.sh 全协议 (Trojan/VLESS + CF 优选 IP)"
+  echo " haha.sh 管理菜单 (Trojan/VLESS + WS + TLS + CF 优选)"
   echo "=============================="
-  echo "1) 安装 Trojan + VLESS + WS + TLS + CF 优选 IP"
+  echo "1) 安装节点"
   echo "2) 开启 BBR"
   echo "3) 修改 CF 域名"
   echo "4) 修改端口"
-  echo "5) 查看 Loon 节点"
-  echo "6) 卸载"
+  echo "5) 查看节点"
+  echo "6) 卸载服务"
   echo "0) 退出"
   echo "=============================="
   read -p "请选择: " c
@@ -200,8 +233,8 @@ menu(){
     4) change_port ;;
     5) show_node ;;
     6) uninstall ;;
-    0) exit ;;
-    *) red "输入错误"; sleep 1 ;;
+    0) exit 0 ;;
+    *) red "输入错误" ;;
   esac
 }
 
