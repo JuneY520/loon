@@ -1,21 +1,4 @@
-trojan2 = trojan,example.com,443,"password",transport=ws,path=/,host=host.com,alpn=http1.1,skip-cert-verify=true,sni=example.com,udp=true
-VLESS4 = VLESS,example.com,10086,"uuid",transport=ws,path=/,host=v3-dy-y.ixigua.com,over-tls=true,sni=example.com,skip-cert-verify=true
-```[oai_citation_attribution:1‡GitHub](https://raw.githubusercontent.com/Loon0x00/LoonExampleConfig/master/Nodes/ExampleNodes.list?utm_source=chatgpt.com)
-
-你之前用的 `tls-name=` 是 **不被 Loon 正式识别的字段**，必须改成 `sni=` 才能正确握手。  
-
----
-
-## 📌 下面是 **修正版、无注释、可直接运行** 的完整脚本
-
-> ⚠️ 注意：  
-> ✔ 不要在脚本里插入说明性文本或 Emoji 图标  
-> ✔ 必须从 `#!/bin/bash` 开始到最后一个 `done` 结束之间全部复制  
-> ✔ 上传到 GitHub 后直接运行
-
-```bash
 #!/bin/bash
-
 set -e
 
 WORK_DIR="/opt/haha"
@@ -47,18 +30,16 @@ write_config() {
       "port": $PORT,
       "protocol": "trojan",
       "settings": {"clients":[{"password":"$TROJAN_PASS"}]},
-      "streamSettings": {"network":"ws","wsSettings":{"path":"$WS_PATH"}}
+      "streamSettings":{"network":"ws","wsSettings":{"path":"$WS_PATH"}}
     },
     {
       "port": $PORT,
       "protocol": "vless",
-      "settings": {"clients":[{"id":"$VLESS_UUID"}],"decryption":"none"},
-      "streamSettings": {"network":"ws","wsSettings":{"path":"$WS_PATH"}}
+      "settings":{"clients":[{"id":"$VLESS_UUID"}],"decryption":"none"},
+      "streamSettings":{"network":"ws","wsSettings":{"path":"$WS_PATH"}}
     }
   ],
-  "outbounds": [
-    {"protocol":"freedom"}
-  ]
+  "outbounds":[{"protocol":"freedom"}]
 }
 EOF
 }
@@ -90,24 +71,30 @@ write_node() {
 }
 
 install_all(){
+  clear
   echo "是否使用 Cloudflare 套域名？"
   echo "y) 套 CF"
   echo "n) 不套 CF + 强制伪装域名"
   read -p "请选择 (y/n): " USE_CF
 
   if [ "$USE_CF" == "y" ]; then
-    read -p "请输入已启用小云朵的 CF 域名: " CF_DOMAIN
+    while true; do
+      read -p "请输入 Cloudflare 域名 (已开启小云朵代理): " CF_DOMAIN
+      [ -n "$CF_DOMAIN" ] && break
+      red "Cloudflare 域名不能为空"
+    done
     DIRECT_HOST="$CF_DOMAIN"
     FAKE_HOST="$CF_DOMAIN"
   else
-    read -p "请输入服务器真实域名或 IP (可留空自动检测): " DIRECT_HOST
-    if [ -z "$DIRECT_HOST" ]; then
-      DIRECT_HOST=$(hostname -f 2>/dev/null || hostname 2>/dev/null || curl -4 -s https://ip.sb || true)
-    fi
     while true; do
-      read -p "请输入伪装域名 (用于 WS Host & SNI): " FAKE_HOST
+      read -p "请输入服务器真实域名或 IP: " DIRECT_HOST
+      [ -n "$DIRECT_HOST" ] && break
+      red "服务器主机/IP 不能为空"
+    done
+    while true; do
+      read -p "请输入伪装域名 (WS Host & SNI): " FAKE_HOST
       [ -n "$FAKE_HOST" ] && break
-      red "伪装域名不能为空！"
+      red "伪装域名不能为空"
     done
   fi
 
@@ -126,9 +113,9 @@ install_all(){
   write_node
 
   clear
-  green "安装完成，Loon 节点如下："
+  green "安装完成"
   cat $NODE_FILE
-  read -p "按回车返回主菜单"
+  read -p "按回车返回菜单"
 }
 
 enable_bbr(){
@@ -139,14 +126,14 @@ net.ipv4.tcp_congestion_control=bbr
 EOF
   sysctl --system >/dev/null 2>&1
   green "BBR 已启用"
-  read -p "按回车返回主菜单"
+  read -p "按回车返回菜单"
 }
 
 change_host(){
-  read -p "请输入新的服务器真实域名/IP: " DIRECT_HOST
-  while [ -z "$DIRECT_HOST" ]; do
+  while true; do
+    read -p "请输入新的服务器真实域名/IP: " DIRECT_HOST
+    [ -n "$DIRECT_HOST" ] && break
     red "主机/IP 不能为空"
-    read -p "请重新输入: " DIRECT_HOST
   done
   while true; do
     read -p "请输入新的伪装域名 (WS Host & SNI): " FAKE_HOST
@@ -155,8 +142,8 @@ change_host(){
   done
   write_node
   systemctl restart xray.service
-  green "已更新"
-  read -p "按回车返回主菜单"
+  green "主机/伪装域名已更新"
+  read -p "按回车返回菜单"
 }
 
 change_port(){
@@ -166,12 +153,37 @@ change_port(){
   write_service
   write_node
   green "端口已更新"
-  read -p "按回车返回主菜单"
+  read -p "按回车返回菜单"
 }
 
 show_node(){
+  if [ -f "$NODE_FILE" ]; then
+    nl -w2 -s'. ' $NODE_FILE
+  else
+    red "未找到节点文件"
+  fi
+  read -p "按回车返回菜单"
+}
+
+delete_node(){
+  if [ ! -f "$NODE_FILE" ]; then
+    red "节点文件不存在"
+    read -p "按回车返回菜单"
+    return
+  fi
+  echo "当前节点列表："
+  nl -w2 -s'. ' $NODE_FILE
+  read -p "请输入要删除的节点编号: " del
+  total=$(wc -l < $NODE_FILE)
+  if ! [[ "$del" =~ ^[0-9]+$ ]] || [ "$del" -lt 1 ] || [ "$del" -gt "$total" ]; then
+    red "无效编号"
+    read -p "按回车返回菜单"
+    return
+  fi
+  sed -i "${del}d" $NODE_FILE
+  green "已删除指定节点"
   cat $NODE_FILE
-  read -p "按回车返回主菜单"
+  read -p "按回车返回菜单"
 }
 
 uninstall(){
@@ -189,7 +201,8 @@ menu(){
   echo "3) 修改 主机/伪装域名"
   echo "4) 修改 端口"
   echo "5) 查看 Loon 节点"
-  echo "6) 卸载服务"
+  echo "6) 删除 单条 节点"
+  echo "7) 卸载 服务"
   echo "0) 退出"
   read -p "请选择: " c
   case $c in
@@ -198,9 +211,10 @@ menu(){
     3) change_host ;;
     4) change_port ;;
     5) show_node ;;
-    6) uninstall ;;
+    6) delete_node ;;
+    7) uninstall ;;
     0) exit ;;
-    *) ;;
+    *) red "输入错误" ;;
   esac
 }
 
