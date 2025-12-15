@@ -201,3 +201,4 @@ install_all() {
 main_menu() {
   setup_directories
   check_dependencies
+  wc -l haha.sh
