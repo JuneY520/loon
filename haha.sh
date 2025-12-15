@@ -52,7 +52,7 @@ After=network.target
 
 [Service]
 ExecStart=$XRAY_BIN -config $CONF_FILE
-Restart=on-failure
+Restart=always
 RestartSec=5s
 
 [Install]
@@ -70,7 +70,7 @@ write_node() {
   echo "VLESS_WS = VLESS,$DIRECT_HOST,$PORT,\"$VLESS_UUID\",transport=ws,path=$WS_PATH,host=$FAKE_HOST,over-tls=true,sni=$FAKE_HOST,skip-cert-verify=true" >> $NODE_FILE
 }
 
-install_all(){
+install_all() {
   clear
   echo "是否使用 Cloudflare 套域名？"
   echo "y) 套 CF"
@@ -79,7 +79,7 @@ install_all(){
 
   if [ "$USE_CF" == "y" ]; then
     while true; do
-      read -p "请输入 Cloudflare 域名 (已开启小云朵代理): " CF_DOMAIN
+      read -p "请输入 Cloudflare 已开启小云朵的域名: " CF_DOMAIN
       [ -n "$CF_DOMAIN" ] && break
       red "Cloudflare 域名不能为空"
     done
@@ -98,7 +98,7 @@ install_all(){
     done
   fi
 
-  read -p "请输入端口 (默认443): " PORT
+  read -p "请输入端口 (默认 443): " PORT
   [ -z "$PORT" ] && PORT=443
 
   WS_PATH="/$(cat /proc/sys/kernel/random/uuid | cut -d- -f1)"
@@ -118,13 +118,21 @@ install_all(){
   read -p "按回车返回菜单"
 }
 
-delete_node(){
+show_node() {
+  if [ -f "$NODE_FILE" ]; then
+    nl -w2 -s'. ' $NODE_FILE
+  else
+    red "未找到节点文件"
+  fi
+  read -p "按回车返回菜单"
+}
+
+delete_node() {
   if [ ! -f "$NODE_FILE" ]; then
     red "节点文件不存在"
     read -p "按回车返回菜单"
     return
   fi
-  echo "当前节点列表："
   nl -w2 -s'. ' $NODE_FILE
   read -p "请输入要删除的节点编号: " del
   total=$(wc -l < $NODE_FILE)
@@ -139,17 +147,58 @@ delete_node(){
   read -p "按回车返回菜单"
 }
 
-show_node(){
-  if [ -f "$NODE_FILE" ]; then
-    nl -w2 -s'. ' $NODE_FILE
-  else
-    red "未找到节点文件"
-  fi
+enable_bbr() {
+  green "正在开启 BBR TCP 加速..."
+  modprobe tcp_bbr >/dev/null 2>&1 || true
+  cat <<EOF >/etc/sysctl.d/99-bbr.conf
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+EOF
+  sysctl --system >/dev/null 2>&1
+  green "BBR 已开启"
   read -p "按回车返回菜单"
 }
 
-menu(){
+change_host() {
+  while true; do
+    read -p "请输入新的服务器真实域名/IP: " DIRECT_HOST
+    [ -n "$DIRECT_HOST" ] && break
+    red "主机/IP 不能为空"
+  done
+  while true; do
+    read -p "请输入新的伪装域名 (WS Host & SNI): " FAKE_HOST
+    [ -n "$FAKE_HOST" ] && break
+    red "伪装域名不能为空"
+  done
+  write_node
+  systemctl restart xray.service
+  green "主机/伪装域名已更新"
+  read -p "按回车返回菜单"
+}
+
+change_port() {
+  read -p "请输入新的端口: " NEW_PORT
+  PORT="$NEW_PORT"
+  write_config
+  write_service
+  write_node
+  green "端口已更新"
+  read -p "按回车返回菜单"
+}
+
+uninstall() {
+  systemctl stop xray.service >/dev/null 2>&1
+  systemctl disable xray.service >/dev/null 2>&1
+  rm -rf $CONF_DIR $WORK_DIR $SERVICE_FILE $XRAY_BIN
+  green "已卸载"
+  read -p "按回车退出"
+}
+
+menu() {
   clear
+  echo "=============================="
+  echo " haha.sh 管理菜单"
+  echo "=============================="
   echo "1) 安装节点"
   echo "2) 查看 Loon 节点"
   echo "3) 删除 单条 节点"
@@ -158,6 +207,7 @@ menu(){
   echo "6) 修改 端口"
   echo "7) 卸载 服务"
   echo "0) 退出"
+  echo "=============================="
   read -p "请选择: " c
   case $c in
     1) install_all ;;
