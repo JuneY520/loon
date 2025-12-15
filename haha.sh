@@ -1,3 +1,5 @@
+
+```bash
 #!/bin/bash
 set -e
 
@@ -177,7 +179,11 @@ change_host() {
 }
 
 change_port() {
-  read -p "请输入新的端口: " NEW_PORT
+  while true; do
+    read -p "请输入新的端口: " NEW_PORT
+    [[ "$NEW_PORT" =~ ^[0-9]+$ ]] && break
+    red "端口必须是数字"
+  done
   PORT="$NEW_PORT"
   write_config
   write_service
@@ -190,7 +196,7 @@ uninstall() {
   systemctl stop xray.service >/dev/null 2>&1
   systemctl disable xray.service >/dev/null 2>&1
   rm -rf $CONF_DIR $WORK_DIR $SERVICE_FILE $XRAY_BIN
-  green "已卸载"
+  green "卸载完成"
   read -p "按回车退出"
 }
 
@@ -199,10 +205,10 @@ menu() {
   echo "=============================="
   echo " haha.sh 管理菜单"
   echo "=============================="
-  echo "1) 安装节点"
+  echo "1) 安装 节点"
   echo "2) 查看 Loon 节点"
   echo "3) 删除 单条 节点"
-  echo "4) 开启 BBR"
+  echo "4) 开启 BBR TCP 加速"
   echo "5) 修改 主机/伪装域名"
   echo "6) 修改 端口"
   echo "7) 卸载 服务"
