@@ -84,7 +84,7 @@ EOF
   green "配置文件已成功写入：$CONF_FILE"
 }
 
-# 创建 Xray 服务
+# 创建 Xray 系统服务
 create_service() {
   green "创建 Xray 系统服务..."
   cat > "$SERVICE_FILE" <<EOF
@@ -126,16 +126,6 @@ EOF
   green "节点文件已生成：$NODE_FILE"
 }
 
-# 启用 BBR 加速
-enable_bbr() {
-  green "开启 BBR TCP 加速..."
-  modprobe tcp_bbr >/dev/null 2>&1
-  echo "net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr" > /etc/sysctl.d/99-bbr.conf
-  sysctl --system >/dev/null 2>&1
-  green "BBR 加速已启用！"
-}
-
 # 安装所有服务及配置
 install_all() {
   clear
@@ -173,14 +163,18 @@ main_menu() {
     echo "=========== 管理菜单 ==========="
     echo "1) 安装节点"
     echo "2) 查看节点信息"
-    echo "3) 启用 BBR 加速"
-    echo "0) 退出菜单"
+    echo "3) 检查服务状态"
+    echo "4) 启动/重启服务"
+    echo "5) 查看 Xray 日志"
+    echo "0) 退出"
     echo "================================"
     read -p "请输入选项: " choice
     case "$choice" in
       1) install_all ;;
       2) cat "$NODE_FILE" || red "节点文件不存在！" ;;
-      3) enable_bbr ;;
+      3) systemctl status xray ;;
+      4) start_service ;;
+      5) journalctl -u xray --no-pager ;;
       0) exit 0 ;;
       *) red "无效的选项，请重新输入！" ;;
     esac
