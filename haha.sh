@@ -110,7 +110,7 @@ start_service() {
   if systemctl is-active --quiet xray.service; then
     green "Xray 服务已成功启动！"
   else
-    red "Xray 未能成功启动，请手动检查日志。"
+    red "Xray 未能成功启动，请检查日志。"
   fi
 }
 
@@ -134,41 +134,7 @@ net.ipv4.tcp_congestion_control=bbr" > /etc/sysctl.d/99-bbr.conf
   green "BBR 加速已启用！"
 }
 
-# 修改端口
-change_port() {
-  read -p "请输入新的端口号 (1~65535): " NEW_PORT
-  PORT="$NEW_PORT"
-  write_config
-  start_service
-  green "端口已更新为 $PORT 并已重启服务！"
-}
-
-# 修改域名或伪装域名
-change_domain() {
-  read -p "请输入新的服务器 IP/域名: " DIRECT_HOST
-  read -p "请输入新的伪装域名: " FAKE_HOST
-  generate_nodes
-  write_config
-  start_service
-  green "域名和伪装域名已更新并重启服务！"
-}
-
-# 删除指定节点
-delete_node() {
-  if [ ! -f "$NODE_FILE" ]; then
-    red "节点文件不存在！"
-    return
-  fi
-  nl "$NODE_FILE"
-  read -p "请输入你要删除的节点编号: " NODE_NUM
-  if ! sed -i "${NODE_NUM}d" "$NODE_FILE"; then
-    red "删除失败，节点编号无效！"
-  else
-    green "节点已成功删除！"
-  fi
-}
-
-# 安装节点流程
+# 安装节点功能
 install_all() {
   clear
   echo "请选择节点配置："
@@ -193,12 +159,30 @@ install_all() {
   generate_nodes
   start_service
   
-  green "安装完成！"
-  cat "$NODE_FILE"  # 直接输出节点信息到终端
+  green "安装完成！以下是节点信息："
+  cat "$NODE_FILE"
 }
 
 # 主菜单
 main_menu() {
   setup_directories
   check_dependencies
-  wc -l haha.sh
+  while true; do
+    echo "======= 主菜单 ======="
+    echo "1) 安装节点"
+    echo "2) 查看节点"
+    echo "3) BBR 加速"
+    echo "0) 退出程序"
+    echo "======================"
+    read -p "选择操作: " choice
+    case "$choice" in
+      1) install_all ;;
+      2) cat "$NODE_FILE" ;;
+      3) enable_bbr ;;
+      0) exit 0 ;;
+      *) red "无效选择，请重新输入！" ;;
+    esac
+  done
+}
+
+main_menu
