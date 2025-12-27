@@ -1,186 +1,157 @@
 #!/bin/bash
+export LANG=en_US.UTF-8
 
-# 定义全局路径变量
-WORK_DIR="/opt/haha"
-CONF_DIR="/usr/local/etc/xray"
-CONF_FILE="$CONF_DIR/config.json"
-NODE_FILE="$WORK_DIR/loon.txt"
-SERVICE_FILE="/etc/systemd/system/xray.service"
-XRAY_BIN="/usr/local/bin/xray"
-
-# 输出格式化
-green() { echo -e "\033[32m$1\033[0m"; }
-red()   { echo -e "\033[31m$1\033[0m"; }
-
-# 必需依赖检查
-check_dependencies() {
-  for cmd in wget unzip systemctl openssl; do
-    if ! command -v "$cmd" >/dev/null; then
-      red "依赖工具 $cmd 未安装，请安装后再运行脚本！"
-      exit 1
-    fi
-  done
+red(){
+    echo -e "\033[31m\033[01m$1\033[0m"
+}
+green(){
+    echo -e "\033[32m\033[01m$1\033[0m"
+}
+yellow(){
+    echo -e "\033[33m\033[01m$1\033[0m"
+}
+blue(){
+    echo -e "\033[36m\033[01m$1\033[0m"
 }
 
-# 创建工作和配置目录
-setup_directories() {
-  mkdir -p "$WORK_DIR" "$CONF_DIR"
+[[ $EUID -ne 0 ]] && red "请使用 root 用户运行脚本" && exit 1
+
+ISP=$(curl -s https://ipinfo.io/org | sed 's/AS.* //')
+
+install_base(){
+    apt update -y
+    apt install -y curl wget unzip jq
 }
 
-# 下载并安装 Xray
-install_xray() {
-  green "开始安装 Xray..."
-  if [ ! -f "$XRAY_BIN" ]; then
-    wget -qO /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-    mkdir -p /tmp/xray
-    unzip -oq /tmp/xray.zip -d /tmp/xray
-    install -m 755 /tmp/xray/xray "$XRAY_BIN"
-    green "Xray 安装完成！"
-  else
-    green "Xray 已安装，跳过..."
-  fi
+install_xray(){
+    bash <(curl -Ls https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
 }
 
-# 生成配置凭据
-generate_credentials() {
-  TROJAN_PASS=$(openssl rand -hex 16)
-  VLESS_UUID=$(cat /proc/sys/kernel/random/uuid)
-  WS_PATH="/$(cat /proc/sys/kernel/random/uuid | cut -d- -f1)"
+install_cloudflared(){
+    wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    dpkg -i cloudflared-linux-amd64.deb
 }
 
-# 写入 Xray 配置文件
-write_config() {
-  green "生成 Xray 配置信息..."
-  cat > "$CONF_FILE" <<EOF
+argo_generate(){
+    cloudflared tunnel --url http://localhost:8080 --no-autoupdate > argo.log 2>&1 &
+    sleep 5
+    argo=$(grep -o 'https://.*trycloudflare.com' argo.log | head -n1 | sed 's#https://##')
+}
+
+uuid=$(cat /proc/sys/kernel/random/uuid)
+urlpath=$(echo $uuid | cut -c1-8)
+
+write_xray_config(){
+cat > /usr/local/etc/xray/config.json <<EOF
 {
   "inbounds": [
     {
-      "port": $PORT,
-      "protocol": "trojan",
+      "port": 8080,
+      "protocol": "$xray_protocol",
       "settings": {
-        "clients": [{"password": "$TROJAN_PASS"}]
+        "clients": [
+          {
+            "id": "$uuid",
+            "password": "$uuid"
+          }
+        ]
       },
       "streamSettings": {
         "network": "ws",
-        "wsSettings": {"path": "$WS_PATH"}
-      }
-    },
-    {
-      "port": $PORT,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{"id": "$VLESS_UUID"}],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "ws",
-        "wsSettings": {"path": "$WS_PATH"}
+        "wsSettings": {
+          "path": "/$urlpath"
+        }
       }
     }
   ],
-  "outbounds": [{"protocol": "freedom"}]
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
 }
 EOF
-  green "配置文件已成功写入：$CONF_FILE"
 }
 
-# 创建 Xray 系统服务
-create_service() {
-  green "创建 Xray 系统服务..."
-  cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=Xray Service
-After=network.target
-
-[Service]
-ExecStart=$XRAY_BIN -config "$CONF_FILE"
-Restart=always
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  systemctl daemon-reload
-  systemctl enable xray.service
-  green "Xray 服务已创建并启用！"
+start_services(){
+    systemctl restart xray
 }
 
-# 启动 Xray 服务
-start_service() {
-  green "启动 Xray 服务..."
-  systemctl restart xray.service
-  if systemctl is-active --quiet xray.service; then
-    green "Xray 服务启动成功！"
-  else
-    red "Xray 服务启动失败，请检查日志。"
-  fi
+generate_node(){
+    > v2ray.txt
+    if [ $protocol == 1 ]; then
+        echo -e ss2022节点已经生成, cloudflare.182682.xyz 可替换为CF优选IP'\n' >> v2ray.txt
+        echo "ss://$(echo -n aes-256-gcm:$uuid | base64 -w0)@cloudflare.182682.xyz:443?encryption=none&type=ws&host=$argo&path=/$urlpath#${ISP}_tls" >> v2ray.txt
+    fi
+
+    if [ $protocol == 2 ]; then
+        echo -e vless节点已经生成, cloudflare.182682.xyz 可替换为CF优选IP'\n' >> v2ray.txt
+        echo "vless://$uuid@cloudflare.182682.xyz:443?encryption=none&security=tls&type=ws&host=$argo&path=/$urlpath#${ISP}_tls" >> v2ray.txt
+    fi
+
+    if [ $protocol == 3 ]; then
+        echo -e trojan节点已经生成, cloudflare.182682.xyz 可替换为CF优选IP'\n' >> v2ray.txt
+        echo "trojan://$uuid@cloudflare.182682.xyz:443?security=tls&type=ws&host=$argo&path=/$urlpath#${ISP}_tls" >> v2ray.txt
+    fi
+
+    echo >> v2ray.txt
+    cat v2ray.txt
+    green "信息已经保存在当前目录 v2ray.txt"
 }
 
-# 生成节点文件
-generate_nodes() {
-  green "生成节点配置文件..."
-  cat > "$NODE_FILE" <<EOF
-Trojan_WS = trojan,$DIRECT_HOST,$PORT,"$TROJAN_PASS",transport=ws,path=$WS_PATH,host=$FAKE_HOST,alpn=http1.1,skip-cert-verify=true,sni=$FAKE_HOST,udp=false
-VLESS_WS = VLESS,$DIRECT_HOST,$PORT,"$VLESS_UUID",transport=ws,path=$WS_PATH,host=$FAKE_HOST,over-tls=true,sni=$FAKE_HOST,skip-cert-verify=true
-EOF
-  green "节点文件已生成：$NODE_FILE"
+install_all(){
+    install_base
+    install_xray
+    install_cloudflared
+
+    read -p "请选择xray协议(默认1.ss2022,2.vless,3.trojan): " protocol
+    [ -z "$protocol" ] && protocol=1
+    if [[ $protocol != 1 && $protocol != 2 && $protocol != 3 ]]; then
+        red "请输入正确的协议"
+        exit 1
+    fi
+
+    if [ $protocol == 1 ]; then xray_protocol="shadowsocks"; fi
+    if [ $protocol == 2 ]; then xray_protocol="vless"; fi
+    if [ $protocol == 3 ]; then xray_protocol="trojan"; fi
+
+    argo_generate
+    write_xray_config
+    start_services
+    generate_node
 }
 
-# 安装所有服务及配置
-install_all() {
-  clear
-  echo "请选择节点设置方式："
-  echo "1) 配置 Cloudflare 域名"
-  echo "2) 自定义 IP/域名 和伪装域名"
-  read -p "输入 1 或 2: " USE_CF
-  if [ "$USE_CF" == "1" ]; then
-    read -p "请输入 Cloudflare 域名: " DIRECT_HOST
-    FAKE_HOST="$DIRECT_HOST"
-  else
-    read -p "请输入服务器真实 IP/域名: " DIRECT_HOST
-    read -p "请输入伪装域名 (Host & SNI): " FAKE_HOST
-  fi
-  read -p "设置服务端口 (默认 443): " PORT
-  PORT=${PORT:-443}
-
-  generate_credentials
-  install_xray
-  setup_directories
-  write_config
-  create_service
-  generate_nodes
-  start_service
-
-  green "安装完成！以下是节点信息："
-  cat "$NODE_FILE"
+uninstall_all(){
+    systemctl stop xray
+    rm -rf /usr/local/etc/xray
+    rm -f /usr/local/bin/xray
+    rm -f /usr/bin/cloudflared
+    rm -f argo.log v2ray.txt
+    green "卸载完成"
 }
 
-# 主菜单
-main_menu() {
-  setup_directories
-  check_dependencies
-  while true; do
-    echo "=========== 管理菜单 ==========="
-    echo "1) 安装节点"
-    echo "2) 查看节点信息"
-    echo "3) 检查服务状态"
-    echo "4) 启动/重启服务"
-    echo "5) 查看 Xray 日志"
-    echo "0) 退出"
-    echo "================================"
-    read -p "请输入选项: " choice
-    case "$choice" in
-      1) install_all ;;
-      2) cat "$NODE_FILE" || red "节点文件不存在！" ;;
-      3) systemctl status xray ;;
-      4) start_service ;;
-      5) journalctl -u xray --no-pager ;;
-      0) exit 0 ;;
-      *) red "无效的选项，请重新输入！" ;;
-    esac
-    read -p "按任意键返回菜单..."
-  done
+menu(){
+clear
+green "Fly.sh 一键部署脚本（已支持 Trojan）"
+echo
+echo "1. 梭哈模式（无需域名，重启失效）"
+echo "2. 卸载服务"
+echo "0. 退出"
+read -p "请输入选项: " num
+case "$num" in
+1)
+install_all
+;;
+2)
+uninstall_all
+;;
+0)
+exit 0
+;;
+*)
+red "请输入正确的选项"
+;;
+esac
 }
 
-# 启动主菜单
-main_menu
+menu
